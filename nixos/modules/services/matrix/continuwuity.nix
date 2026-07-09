@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.services.matrix-continuwuity;
+
   defaultUser = "continuwuity";
   defaultGroup = "continuwuity";
 
@@ -20,6 +21,7 @@ in
   meta.maintainers = with lib.maintainers; [
     nyabinary
     snaki
+    # xaltsc do I want to ? do I need to ?
   ];
   options.services.matrix-continuwuity = {
     enable = lib.mkEnableOption "continuwuity";
@@ -32,6 +34,8 @@ in
       default = defaultUser;
     };
 
+    createUser = lib.mkEnableOption "creating the user" // { default = cfg.user == defaultUser;};
+
     group = lib.mkOption {
       type = lib.types.nonEmptyStr;
       description = ''
@@ -39,6 +43,8 @@ in
       '';
       default = defaultGroup;
     };
+
+    createGroup = lib.mkEnableOption "creating the group" // { default = cfg.group == defaultGroup;};
 
     extraEnvironment = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
@@ -92,10 +98,13 @@ in
               `null` (the default value). The option {option}`services.continuwuity.group` must
               be set to a group your reverse proxy is part of.
 
-              This will automatically add a system user "continuwuity" to your system if
-              {option}`services.continuwuity.user` is left at the default, and a "continuwuity"
-              group if {option}`services.continuwuity.group` is left at the default.
+              For continuwuity to have the rights to write a socket
+              under `/run/`, it must be in the directory `/run/{option}`systemd.services.continuwuity.serviceConfig.RuntimeDirectory`/`.
+
+              Edit {option}`systemd.services.continuwuity.serviceConfig.RuntimeDirectory`
+              if you wish to change it.
             '';
+            exampleText = "/run/{option}`systemd.services.continuwuity.serviceConfig.RuntimeDirectory`/continuwuity.sock";
           };
           global.unix_socket_perms = lib.mkOption {
             type = lib.types.ints.positive;
@@ -148,10 +157,13 @@ in
           global.database_path = lib.mkOption {
             readOnly = true;
             type = lib.types.path;
-            default = "/var/lib/continuwuity/";
+            default = "/var/lib/${config.systemd.services.continuwuity.serviceConfig.StateDir}/";
+            defaultText = "/var/lib/{option}`config.services.continuwuity.serviceConfig.StateDir`/";
             description = ''
               Path to the continuwuity database, the directory where continuwuity will save its data.
               Note that database_path cannot be edited because of the service's reliance on systemd StateDir.
+
+              Edit {option}`systemd.service.continuwuity.serviceConfig.StateDir` if you wish to change it.
             '';
           };
           global.allow_announcements_check = lib.mkOption {
@@ -198,26 +210,37 @@ in
           Leave one of the two options unset or explicitly set them to `null`.
         '';
       }
-      {
-        assertion = cfg.user != defaultUser -> config ? users.users.${cfg.user};
-        message = "If `services.continuwuity.user` is changed, the configured user must already exist.";
+      { assertion = (cfg.settings ? global.unix_socket_path) -> ( lib.startsWith "/run" -> lib.startsWith "/run/${config.systemd.services.continuwuity.serviceConfig.RuntimeDirectory}/");
+        message = "You are trying to set the socket path in a `/run` subpath where Continuwuity has no write access. Refer to the docs for proper usage.";
       }
       {
-        assertion = cfg.group != defaultGroup -> config ? users.groups.${cfg.group};
-        message = "If `services.continuwuity.group` is changed, the configured group must already exist.";
+        assertion = cfg.createUser -> config ? users.users.${cfg.user};
+        message = "Continuwuity user '${cfg.user}' already exists. Refusing to create it.";
+      }
+      {
+        assertion = cfg.createGroup -> config ? users.groups.${cfg.groups};
+        message = "Continuwuity group '${cfg.group}' already exists. Refusing to create it.";
+      }
+      {
+        assertion = !cfg.createUser -> config ? users.users.${cfg.user};
+        message = "If `services.continuwuity.createUser` is not enabled, the configured user must already exist.";
+      }
+      {
+        assertion = !cfg.createGroup -> config ? users.groups.${cfg.group};
+        message = "If `services.continuwuity.createGroup` is not enabled, the configured group must already exist.";
       }
     ];
 
-    users.users = lib.mkIf (cfg.user == defaultUser) {
-      ${defaultUser} = {
+    users.users = lib.mkIf cfg.createUser {
+      ${cfg.user} = {
         group = cfg.group;
         home = cfg.settings.global.database_path;
         isSystemUser = true;
       };
     };
 
-    users.groups = lib.mkIf (cfg.group == defaultGroup) {
-      ${defaultGroup} = { };
+    users.groups = lib.mkIf cfg.createGroup {
+      ${cfg.group} = { };
     };
 
     systemd.services.continuwuity = {
@@ -276,9 +299,9 @@ in
         ];
         SystemCallErrorNumber = "EPERM";
 
-        StateDirectory = "continuwuity";
+        StateDirectory = lib.mkDefault "continuwuity";
         StateDirectoryMode = "0700";
-        RuntimeDirectory = "continuwuity";
+        RuntimeDirectory = lib.mkDefault "continuwuity";
         RuntimeDirectoryMode = "0750";
 
         ExecStart = lib.getExe cfg.package;
