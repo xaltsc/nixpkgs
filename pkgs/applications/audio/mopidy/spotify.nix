@@ -18,7 +18,7 @@ pythonPackages.buildPythonApplication (finalAttrs: {
     hash = "sha256-pM+kqeWYiPXv9DZDBTgwiEwC6Sbqv6uz5vJ5odcixOw=";
   };
 
-  build-system = [ pythonPackages.setuptools ];
+  build-system = [ pythonPackages.setuptools_80 ];
 
   dependencies = [
     mopidy
