@@ -30,7 +30,7 @@ pythonPackages.buildPythonApplication (finalAttrs: {
   '';
 
   build-system = [
-    pythonPackages.setuptools
+    pythonPackages.setuptools_80
   ];
 
   dependencies = [
