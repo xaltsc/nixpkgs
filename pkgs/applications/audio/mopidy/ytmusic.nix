@@ -26,7 +26,7 @@ python.pkgs.buildPythonApplication (finalAttrs: {
   '';
 
   nativeBuildInputs = with python.pkgs; [
-    setuptools
+    setuptools_80
   ];
 
   propagatedBuildInputs = [
